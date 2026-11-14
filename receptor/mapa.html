@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Mapa Sonoro del Campus</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:0;background:#f4f5f7;color:#1d2330}
+  header{background:#123a5a;color:#fff;padding:14px 22px}
+  header h1{margin:0;font-size:20px} header p{margin:2px 0 0;font-size:13px;opacity:.85}
+  main{display:grid;grid-template-columns:520px 1fr;gap:18px;padding:18px 22px}
+  .card{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:14px}
+  h2{font-size:15px;margin:0 0 10px}
+  svg text{font-size:13px;font-weight:600;fill:#1d2330}
+  svg .v{font-size:18px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e6e8ec;vertical-align:top}
+  th{background:#f0f2f5}
+  .chip{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600}
+  .normal{background:#d8f1df;color:#16612f} .alerta{background:#fbd5d1;color:#9b1c10}
+  .sin_dato{background:#e1e3e7;color:#4a5160} .observando{background:#e5ecf8;color:#284c86}
+  .sospechoso{background:#fdeccc;color:#8a5a00}
+  .legend span{margin-right:12px;font-size:12px}
+  #banner{display:none;background:#9b1c10;color:#fff;padding:10px 22px;font-weight:600}
+  .rej td{color:#9b1c10}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mapa Sonoro del Campus · UCC Montería</h1>
+  <p>LAeq en dB(A), ventana de 10 s · Alerta: entra &gt; 65 dB(A) (Res. 627/2006), sale &lt; 62 dB(A) · Actualizado: <span id="hora">–</span></p>
+</header>
+<div id="banner"></div>
+<main>
+  <div class="card">
+    <h2>Estado por zona (promedio del último minuto)</h2>
+    <svg id="mapa" viewBox="0 0 500 340" width="500" height="340">
+      <rect x="0" y="0" width="500" height="340" rx="10" fill="#eef1f4"/>
+      <g id="z-biblioteca"><rect x="15" y="15" width="200" height="140" rx="8"/><text x="25" y="38">Biblioteca</text><text class="v" x="25" y="80"></text><text class="d" x="25" y="105"></text></g>
+      <g id="z-cafeteria"><rect x="285" y="15" width="200" height="140" rx="8"/><text x="295" y="38">Cafetería</text><text class="v" x="295" y="80"></text><text class="d" x="295" y="105"></text></g>
+      <g id="z-circulacion"><rect x="15" y="170" width="470" height="40" rx="8"/><text x="25" y="195">Circulación</text><text class="v" x="160" y="197"></text><text class="d" x="260" y="195"></text></g>
+      <g id="z-teatrino"><rect x="15" y="225" width="200" height="100" rx="8"/><text x="25" y="248">Teatrino</text><text class="v" x="25" y="285"></text><text class="d" x="25" y="308"></text></g>
+      <g id="z-recreativa"><rect x="285" y="225" width="200" height="100" rx="8"/><text x="295" y="248">Recreativa</text><text class="v" x="295" y="285"></text><text class="d" x="295" y="308"></text></g>
+    </svg>
+    <div class="legend">
+      <span class="chip normal">normal ≤ 65</span><span class="chip alerta">alerta: entra &gt; 65, sale &lt; 62</span>
+      <span class="chip sin_dato">sin dato</span><span class="chip observando">observando</span>
+      <span class="chip sospechoso">sospechoso: &lt; 30 o valor congelado</span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Decisión por zona</h2>
+    <table id="tz"><thead><tr><th>Zona</th><th>Último</th><th>Prom. 1 min</th><th>Estado</th><th>Decisión</th><th>Calidad</th><th>Perdidos / dupl.</th></tr></thead><tbody></tbody></table>
+    <h2 style="margin-top:16px">Últimos rechazos</h2>
+    <table class="rej" id="tr"><thead><tr><th>Hora</th><th>Motivo</th></tr></thead><tbody></tbody></table>
+    <h2 style="margin-top:16px">Historial de alertas y avisos</h2>
+    <table id="ta"><thead><tr><th>Hora</th><th>Zona</th><th>Tipo</th><th>Mensaje</th></tr></thead><tbody></tbody></table>
+  </div>
+</main>
+<script>
+const COL={normal:"#7fd19a",alerta:"#ef7b6e",sin_dato:"#c7cbd2",observando:"#a9c1ea",sospechoso:"#f5c86a"};
+const h=s=>String(s??"–").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const hhmm=t=>t?t.slice(11,19):"–";
+async function tick(){
+  try{
+    const e=await (await fetch("/api/estado")).json();
+    const r=await (await fetch("/api/registro")).json();
+    document.getElementById("hora").textContent=e.hora.replace("T"," ");
+    let filas="",alertas=[];
+    for(const z of e.zonas){
+      const g=document.getElementById("z-"+z.zona);
+      g.querySelector("rect").setAttribute("fill",COL[z.estado]||"#ccc");
+      g.querySelector(".v").textContent=z.estado==="sin_dato"?"sin dato":(z.promedio+" dB(A)");
+      g.querySelector(".d").textContent=z.estado==="sin_dato"?"no se decide":z.estado;
+      if(z.estado==="alerta")alertas.push(z.zona);
+      filas+=`<tr><td>${h(z.zona)}</td><td>${z.valor??"–"}</td><td>${z.promedio??"–"}</td><td><span class="chip ${z.estado}">${h(z.estado)}</span></td><td>${h(z.decision)}</td><td>${h(z.calidad)}</td><td>${z.perdidos} / ${z.duplicados}</td></tr>`;
+    }
+    document.querySelector("#tz tbody").innerHTML=filas;
+    const b=document.getElementById("banner");
+    if(alertas.length){b.style.display="block";b.textContent="⚠ Aviso a Bienestar Universitario: nivel sostenido sobre 65 dB(A) en "+alertas.join(", ");}
+    else b.style.display="none";
+    document.querySelector("#tr tbody").innerHTML=r.rechazos.map(x=>`<tr><td>${hhmm(x.recibido)}</td><td>${h(x.motivo)}</td></tr>`).join("")||"<tr><td colspan=2>sin rechazos</td></tr>";
+    document.querySelector("#ta tbody").innerHTML=r.alertas.map(x=>`<tr><td>${hhmm(x.momento)}</td><td>${h(x.zona)}</td><td>${h(x.tipo)}</td><td>${h(x.mensaje)}</td></tr>`).join("")||"<tr><td colspan=4>sin alertas</td></tr>";
+  }catch(err){
+    const b=document.getElementById("banner");b.style.display="block";
+    b.textContent="Receptor no disponible: los datos en pantalla pueden estar desactualizados";
+  }
+}
+tick();setInterval(tick,2000);
+</script>
+</body>
+</html>
